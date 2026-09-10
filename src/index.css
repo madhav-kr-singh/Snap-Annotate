@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-main: #121212;
+    --bg-surface: #181818;
+    --bg-card: #1e1e1e;
+    --bg-input: #262626;
+    --accent-primary: #6366f1;
+    --accent-emerald: #10b981;
+    --accent-crimson: #ef4444;
+  }
+
+  body {
+    background-color: #121212;
+    color: #f8fafc;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Glassmorphism & Custom Scrollbars */
+.glass-panel {
+  background: rgba(18, 18, 18, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: rgba(30, 30, 30, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-input {
+  background: rgba(38, 38, 38, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: all 0.2s ease;
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(18, 18, 18, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Canvas Grid Pattern Background */
+.canvas-grid-bg {
+  background-color: #121212;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Custom Glow utilities */
+.glow-primary {
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
+}
