@@ -21,9 +21,10 @@ import {
 
 interface SidebarProps {
   width?: number;
+  onImageUploaded?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ width = 320, onImageUploaded }) => {
   const {
     images,
     currentIndex,
@@ -72,6 +73,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
         const img = new Image();
         img.onload = () => {
           addImage(file.name, dataUrl, img.width, img.height, img);
+          onImageUploaded?.();
         };
         img.src = dataUrl;
       };
@@ -204,6 +206,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
     img.onload = () => {
       const name = type === 'dashboard' ? 'Analytics_Dashboard.png' : 'Settings_Form.png';
       addImage(name, dataUrl, 960, 600, img);
+      onImageUploaded?.();
     };
     img.src = dataUrl;
   };

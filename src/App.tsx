@@ -12,11 +12,12 @@ const DEFAULT_SIDEBAR_WIDTH = 320; // w-80
 
 export const AppContent: React.FC = () => {
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const isResizing = useRef(false);
 
   const toggleLeftSidebar = () => setIsLeftSidebarOpen((prev) => !prev);
+  const openLeftSidebar = () => setIsLeftSidebarOpen(true);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -56,7 +57,7 @@ export const AppContent: React.FC = () => {
         {/* Left Sidebar - Image Thumbnails */}
         {isLeftSidebarOpen && (
           <>
-            <Sidebar width={sidebarWidth} />
+            <Sidebar width={sidebarWidth} onImageUploaded={openLeftSidebar} />
 
             {/* Resize Handle */}
             <div
@@ -75,6 +76,7 @@ export const AppContent: React.FC = () => {
         <CanvasWorkspace
           isLeftSidebarOpen={isLeftSidebarOpen}
           onToggleLeftSidebar={toggleLeftSidebar}
+          onImageUploaded={openLeftSidebar}
         />
 
         {/* Right Inspector & Grouping Toolbar */}

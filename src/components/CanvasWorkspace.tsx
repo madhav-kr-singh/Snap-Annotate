@@ -19,11 +19,13 @@ import {
 interface CanvasWorkspaceProps {
   isLeftSidebarOpen?: boolean;
   onToggleLeftSidebar?: () => void;
+  onImageUploaded?: () => void;
 }
 
 export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   isLeftSidebarOpen = true,
   onToggleLeftSidebar,
+  onImageUploaded,
 }) => {
   const {
     images,
@@ -68,12 +70,13 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         const img = new Image();
         img.onload = () => {
           addImage(file.name, dataUrl, img.width, img.height, img);
+          onImageUploaded?.();
         };
         img.src = dataUrl;
       };
       reader.readAsDataURL(file);
     });
-  }, [addImage]);
+  }, [addImage, onImageUploaded]);
 
   // Demo screenshot loader
   const handleSampleLoader = () => {
@@ -118,6 +121,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     const img = new Image();
     img.onload = () => {
       addImage('1_Sample_Dashboard.png', dataUrl, 960, 600, img);
+      onImageUploaded?.();
     };
     img.src = dataUrl;
   };
