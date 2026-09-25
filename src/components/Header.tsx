@@ -6,13 +6,12 @@ import {
   Undo2, 
   Redo2, 
   Trash2, 
-  Download, 
-  Layers, 
   Keyboard, 
   Camera,
   Archive,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Loader2
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -44,33 +43,6 @@ export const Header: React.FC<HeaderProps> = ({
   const currentImg = currentIndex >= 0 ? images[currentIndex] : null;
   const activeGroup = groups.find((g) => g.id === activeGroupId) || groups[0];
 
-  // Export current single image with annotations
-  const handleExportSingle = () => {
-    if (currentIndex === -1 || !currentImg) return;
-    const canvas = document.getElementById('main-canvas') as HTMLCanvasElement;
-    if (canvas) {
-      downloadCanvasAsPNG(canvas, `annotated_${currentImg.name.replace(/\.[^/.]+$/, '')}`);
-    }
-  };
-
-  // Export active composite merged guide canvas
-  const handleExportMerged = () => {
-    if (!activeGroup) return;
-    const groupImages = images.filter((img) => activeGroup.imageIds.includes(img.id));
-    const targetImages = groupImages.length > 0 ? groupImages : images;
-    if (targetImages.length === 0) return;
-
-    const groupAnnotations: Record<number, any> = {};
-    targetImages.forEach((img, idx) => {
-      const originalIdx = images.findIndex((i) => i.id === img.id);
-      groupAnnotations[idx] = annotationsPerImage[originalIdx] || [];
-    });
-
-    const mergedCanvas = renderMergedGuideCanvas(targetImages, groupAnnotations, activeGroup);
-    downloadCanvasAsPNG(mergedCanvas, `${activeGroup.name.replace(/\s+/g, '_')}_guide`);
-  };
-
-  // Export all groups in a single ZIP file with clean filenames (1.png, 2.png, 3.png...)
   const handleExportZip = async () => {
     if (images.length === 0 || isZipping) return;
     try {
@@ -84,70 +56,127 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-14 bg-[#121212]/95 border-b border-white/10 backdrop-blur-md px-4 flex items-center justify-between z-30 shrink-0 select-none">
-      {/* Brand & Logo */}
-      <div className="flex items-center gap-3">
-       
-
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 border border-white/20">
-          <Camera className="w-5 h-5 text-white" />
+    <header className="h-13 shrink-0 select-none relative z-30 flex items-center justify-between px-3 border-b border-white/[0.055]"
+      style={{
+        background: 'linear-gradient(180deg, rgba(16,16,26,0.98) 0%, rgba(12,12,20,0.96) 100%)',
+        backdropFilter: 'blur(24px) saturate(160%)',
+        boxShadow: '0 1px 0 rgba(255,255,255,0.045), 0 1px 20px rgba(0,0,0,0.4)',
+      }}
+    >
+      {/* ── Brand ─────────────────────────────────── */}
+      <div className="flex items-center gap-2.5">
+        {/* Logo mark */}
+        <div className="relative w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #818cf8 100%)',
+            boxShadow: '0 0 0 1px rgba(99,102,241,0.5), 0 4px 14px rgba(99,102,241,0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
+          }}
+        >
+          <Camera className="w-4 h-4 text-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))' }} />
         </div>
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <span className="font-['Plus_Jakarta_Sans'] font-extrabold text-base tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-indigo-200">
+
+        {/* Text */}
+        <div className="flex flex-col leading-none gap-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="font-['Plus_Jakarta_Sans'] font-extrabold text-[13px] tracking-tight"
+              style={{ background: 'linear-gradient(90deg, #ffffff 0%, #c7c9f0 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
+            >
               SnapAnnotate
             </span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-              Pro Studio
+            <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-px rounded-full border"
+              style={{ color: '#818cf8', borderColor: 'rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.1)' }}
+            >
+              Pro
             </span>
           </div>
-          <span className="text-[10px] text-slate-400 font-medium">Screenshot & Documentation Workbench</span>
+          <span className="text-[9.5px] font-medium" style={{ color: 'var(--text-muted)' }}>
+            Screenshot Studio
+          </span>
         </div>
-         {/* Toggle Left Sidebar */}
+
+        {/* Sidebar toggle */}
+        <div className="w-px h-5 mx-1 separator-v" />
         <button
           onClick={onToggleLeftSidebar}
-          className={`p-2 rounded-lg transition-all border cursor-pointer ${
-            isLeftSidebarOpen
-              ? 'bg-indigo-500/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/30'
-              : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
-          }`}
-          title={isLeftSidebarOpen ? 'Hide Left Sidebar (Ctrl+[)' : 'Show Left Sidebar (Ctrl+[)'}
+          className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer"
+          style={{
+            background: isLeftSidebarOpen ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.05)',
+            border: isLeftSidebarOpen ? '1px solid rgba(99,102,241,0.35)' : '1px solid rgba(255,255,255,0.07)',
+            color: isLeftSidebarOpen ? '#818cf8' : 'var(--text-muted)',
+          }}
+          title={isLeftSidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(99,102,241,0.4)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = isLeftSidebarOpen ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.07)'; }}
         >
-          {isLeftSidebarOpen ? <PanelLeftClose className="w-4.5 h-4.5" /> : <PanelLeftOpen className="w-4.5 h-4.5" />}
+          {isLeftSidebarOpen
+            ? <PanelLeftClose className="w-3.5 h-3.5" />
+            : <PanelLeftOpen className="w-3.5 h-3.5" />
+          }
         </button>
       </div>
 
-      {/* Document / Image Status */}
-      <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1a1a1a]/80 border border-white/5 text-xs text-slate-300">
-        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+      {/* ── Status Pill ──────────────────────────── */}
+      <div className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs"
+        style={{
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          color: 'var(--text-secondary)',
+          maxWidth: 280,
+        }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full shrink-0 breathe"
+          style={{ background: currentImg ? '#10b981' : 'var(--text-muted)', boxShadow: currentImg ? '0 0 6px rgba(16,185,129,0.8)' : 'none' }}
+        />
         {currentImg ? (
-          <span>
-            <strong className="text-white font-medium">Image {currentIndex + 1} of {images.length}:</strong>{' '}
-            <span className="text-slate-400 truncate max-w-[200px] inline-block align-bottom">{currentImg.name}</span>
-          </span>
+          <>
+            <span className="font-medium text-white/80">
+              {currentIndex + 1}
+              <span className="text-white/30 mx-1">/</span>
+              <span className="text-white/30">{images.length}</span>
+            </span>
+            <span className="truncate max-w-[160px]" style={{ color: 'var(--text-muted)' }}>{currentImg.name}</span>
+          </>
         ) : (
-          <span className="text-slate-400">No screenshots loaded</span>
+          <span>No screenshots loaded</span>
         )}
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-2">
+      {/* ── Actions ──────────────────────────────── */}
+      <div className="flex items-center gap-1.5">
         {/* Shortcuts */}
         <button
           onClick={onOpenShortcuts}
-          className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+          className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer"
+          style={{ color: 'var(--text-muted)', background: 'transparent', border: '1px solid transparent' }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)';
+            (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.08)';
+            (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLElement).style.background = 'transparent';
+            (e.currentTarget as HTMLElement).style.borderColor = 'transparent';
+            (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)';
+          }}
           title="Keyboard Shortcuts (?)"
         >
-          <Keyboard className="w-4 h-4" />
+          <Keyboard className="w-3.5 h-3.5" />
         </button>
 
-        <div className="h-4 w-px bg-white/10 mx-1" />
+        <div className="separator-v h-4 mx-0.5" />
 
         {/* Undo */}
         <button
           onClick={undo}
           disabled={!canUndo}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-300 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all border border-white/5"
+          className="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-semibold transition-all duration-150 cursor-pointer disabled:opacity-25 disabled:pointer-events-none"
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.07)',
+            color: 'var(--text-secondary)',
+          }}
+          onMouseEnter={e => { if (!e.currentTarget.disabled) { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.09)'; (e.currentTarget as HTMLElement).style.color = '#eeeef5'; }}}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
           title="Undo (Ctrl+Z)"
         >
           <Undo2 className="w-3.5 h-3.5" />
@@ -158,7 +187,14 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={redo}
           disabled={!canRedo}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-300 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all border border-white/5"
+          className="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-semibold transition-all duration-150 cursor-pointer disabled:opacity-25 disabled:pointer-events-none"
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.07)',
+            color: 'var(--text-secondary)',
+          }}
+          onMouseEnter={e => { if (!e.currentTarget.disabled) { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.09)'; (e.currentTarget as HTMLElement).style.color = '#eeeef5'; }}}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
           title="Redo (Ctrl+Y)"
         >
           <Redo2 className="w-3.5 h-3.5" />
@@ -169,48 +205,40 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={clearAll}
           disabled={currentIndex === -1}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 disabled:opacity-30 disabled:pointer-events-none transition-all"
+          className="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-semibold transition-all duration-150 cursor-pointer disabled:opacity-25 disabled:pointer-events-none"
+          style={{
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.18)',
+            color: '#fca5a5',
+          }}
+          onMouseEnter={e => { if (!e.currentTarget.disabled) { (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.15)'; }}}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.08)'; }}
           title="Clear Annotations"
         >
           <Trash2 className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Clear</span>
         </button>
 
-        <div className="h-4 w-px bg-white/10 mx-1" />
+        <div className="separator-v h-4 mx-0.5" />
 
-        {/* Export Single (Commented out per user request)
-        <button
-          onClick={handleExportSingle}
-          disabled={currentIndex === -1}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:pointer-events-none transition-all shadow-md shadow-indigo-600/30 border border-indigo-400/30 active:scale-[0.98]"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Export PNG</span>
-        </button>
-        */}
-
-        {/* Export Composite Merged Guide (Commented out per user request)
-        <button
-          onClick={handleExportMerged}
-          disabled={images.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:pointer-events-none transition-all shadow-md shadow-emerald-600/30 border border-emerald-400/30 active:scale-[0.98]"
-          title="Export Composite Merged Multi-Image Guide Stack"
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span className="hidden lg:inline">Export Merged Guide</span>
-          <span className="lg:hidden">Merged</span>
-        </button>
-        */}
-
-        {/* Export All Groups ZIP (Primary Top Right Action) */}
+        {/* Export ZIP — Primary CTA */}
         <button
           onClick={handleExportZip}
           disabled={images.length === 0 || isZipping}
-          className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/40 shadow-lg shadow-indigo-600/30 disabled:opacity-40 disabled:pointer-events-none transition-all active:scale-[0.98] cursor-pointer"
-          title="Export All Groups as ZIP (Files named 1.png, 2.png, 3.png...)"
+          className="flex items-center gap-2 px-3.5 h-7 rounded-xl text-[11px] font-bold transition-all duration-150 cursor-pointer disabled:opacity-30 disabled:pointer-events-none btn-shimmer active:scale-[0.97]"
+          style={{
+            background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 60%, #818cf8 100%)',
+            border: '1px solid rgba(129,140,248,0.45)',
+            color: '#fff',
+            boxShadow: '0 1px 0 rgba(255,255,255,0.15) inset, 0 4px 14px rgba(99,102,241,0.35)',
+          }}
+          title="Export All Groups as ZIP"
         >
-          <Archive className={`w-4 h-4 ${isZipping ? 'animate-spin' : ''}`} />
-          <span>{isZipping ? 'Zipping...' : 'Download ZIP'}</span>
+          {isZipping
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <Archive className="w-3.5 h-3.5" />
+          }
+          <span>{isZipping ? 'Zipping…' : 'Download ZIP'}</span>
         </button>
       </div>
     </header>

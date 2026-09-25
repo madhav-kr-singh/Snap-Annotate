@@ -6,8 +6,6 @@ import {
   Upload, 
   Image as ImageIcon, 
   X, 
-  ArrowUp, 
-  ArrowDown, 
   Sparkles,
   Plus,
   Layers,
@@ -15,18 +13,25 @@ import {
   GripVertical,
   Download,
   Trash2,
-  Archive
+  Archive,
+  ChevronDown,
+  ChevronRight,
+  Move
 } from 'lucide-react';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  width?: number;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ width = 320 }) => {
   const {
     images,
     currentIndex,
     annotationsPerImage,
     addImage,
     switchImage,
+    switchImageById,
     removeImage,
-    reorderImages,
     groups,
     activeGroupId,
     createGroup,
@@ -35,19 +40,27 @@ export const Sidebar: React.FC = () => {
     assignImageToGroup,
     moveImageBetweenGroups,
     removeImageFromGroup,
+    reorderGroupImages,
     updateGroup,
     autoGroupImagesByName,
   } = useAppStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const draggedImageIdRef = useRef<string | null>(null);
-  const draggedSourceGroupIdRef = useRef<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+
+  // Drag and drop states for reordering images within and across groups
   const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
   const [draggedSourceGroupId, setDraggedSourceGroupId] = useState<string | null>(null);
-  const [draggedImageIndex, setDraggedImageIndex] = useState<number | null>(null);
+  const [dragOverImageId, setDragOverImageId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
-  const [dragOverImageIndex, setDragOverImageIndex] = useState<number | null>(null);
+  const [isZipping, setIsZipping] = useState(false);
+
+  // Track collapsed state per group
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroupCollapse = (groupId: string) => {
+    setCollapsedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
 
   const processFiles = (files: FileList | File[]) => {
     Array.from(files).forEach((file) => {
@@ -150,45 +163,56 @@ export const Sidebar: React.FC = () => {
       ctx.fillRect(0, 0, 960, 600);
 
       ctx.fillStyle = '#1f2937';
+      ctx.fillRect(0, 0, 960, 50);
+      ctx.fillStyle = '#f9fafb';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText('Settings & Organization', 30, 32);
+
+      ctx.fillStyle = '#1f2937';
       ctx.beginPath();
-      ctx.roundRect(180, 50, 600, 500, 16);
+      ctx.roundRect(180, 80, 600, 480, 16);
       ctx.fill();
 
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 22px sans-serif';
-      ctx.fillText('Account Settings & Security', 220, 100);
+      ctx.fillStyle = '#f3f4f6';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText('Edit Workspace Profile', 220, 130);
 
-      const labels = ['Full Name', 'Work Email Address', 'API Key Secret', 'Notification Preference'];
+      const labels = ['Workspace Name', 'Domain URL', 'Admin Email', 'API Secret Key'];
       labels.forEach((label, idx) => {
-        const y = 140 + idx * 90;
+        const y = 160 + idx * 75;
         ctx.fillStyle = '#9ca3af';
-        ctx.font = '14px sans-serif';
-        ctx.fillText(label, 220, y);
+        ctx.font = '13px sans-serif';
+        ctx.fillText(label, 220, y + 15);
 
         ctx.fillStyle = '#374151';
         ctx.beginPath();
-        ctx.roundRect(220, y + 10, 520, 44, 8);
+        ctx.roundRect(220, y + 25, 520, 36, 8);
         ctx.fill();
-
-        ctx.fillStyle = '#e5e7eb';
-        ctx.font = '14px sans-serif';
-        const val = idx === 2 ? 'sk_live_9948102948192038102384' : `Sample Value for ${label}`;
-        ctx.fillText(val, 240, y + 36);
       });
+
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.roundRect(620, 480, 120, 40, 8);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText('Save Changes', 635, 505);
     }
 
-    const dataUrl = canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL();
     const img = new Image();
-    const sampleName = type === 'dashboard' ? `1_${images.length + 1}_dashboard.png` : `2_${images.length + 1}_form_settings.png`;
     img.onload = () => {
-      addImage(sampleName, dataUrl, canvas.width, canvas.height, img);
+      const name = type === 'dashboard' ? 'Analytics_Dashboard.png' : 'Settings_Form.png';
+      addImage(name, dataUrl, 960, 600, img);
     };
     img.src = dataUrl;
   };
 
-  // Export group PNG
+  // ponytail: export preserving exact group imageIds sequence
   const handleExportGroup = (group: typeof groups[0]) => {
-    const groupImages = images.filter((img) => group.imageIds.includes(img.id));
+    const groupImages = group.imageIds
+      .map((id) => images.find((img) => img.id === id))
+      .filter((img): img is (typeof images)[0] => Boolean(img));
     if (groupImages.length === 0) return;
 
     const groupAnnotations: Record<number, any> = {};
@@ -200,8 +224,6 @@ export const Sidebar: React.FC = () => {
     const mergedCanvas = renderMergedGuideCanvas(groupImages, groupAnnotations, group);
     downloadCanvasAsPNG(mergedCanvas, `${group.name.replace(/\s+/g, '_')}_guide`);
   };
-
-  const [isZipping, setIsZipping] = useState(false);
 
   const handleExportZip = async () => {
     if (images.length === 0 || isZipping) return;
@@ -215,74 +237,39 @@ export const Sidebar: React.FC = () => {
     }
   };
 
+  const sortedGroups = sortGroupsNumerically(groups, images);
+  const currentImg = currentIndex >= 0 ? images[currentIndex] : null;
+
+  // Identify any images not assigned to any group
+  const allAssignedIds = new Set(groups.flatMap((g) => g.imageIds));
+  const ungroupedImages = images.filter((img) => !allAssignedIds.has(img.id));
+
   return (
-    <aside className="w-80 bg-[#121212] border-r border-white/10 flex flex-col h-full shrink-0 select-none">
-      {/* Upload Zone & Samples */}
-      <div className="p-3 border-b border-white/10 space-y-2">
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={handleDragOverFile}
-          onDragLeave={handleDragLeaveFile}
-          onDrop={handleDropFile}
-          className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-all ${
-            isDraggingFile
-              ? 'border-indigo-500 bg-indigo-500/10 scale-[1.02]'
-              : 'border-white/15 bg-[#1e1e1e]/60 hover:border-indigo-500/50 hover:bg-[#1e1e1e]'
-          }`}
-        >
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept="image/*"
-            multiple
-            className="hidden"
-          />
-          <div className="flex items-center justify-center gap-2 text-indigo-400">
-            <Upload className="w-4 h-4" />
-            <span className="text-xs font-semibold text-slate-200">Drop Images or Click to Upload</span>
-          </div>
-        </div>
-
-        <div className="flex gap-1.5">
-          <button
-            onClick={() => createSampleScreenshot('dashboard')}
-            className="flex-1 py-1 px-2 rounded-lg text-[10px] font-semibold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 transition-all flex items-center justify-center gap-1"
-          >
-            <Sparkles className="w-3 h-3" />
-            <span>+ Dashboard</span>
-          </button>
-          <button
-            onClick={() => createSampleScreenshot('form')}
-            className="flex-1 py-1 px-2 rounded-lg text-[10px] font-semibold text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 transition-all flex items-center justify-center gap-1"
-          >
-            <Plus className="w-3 h-3" />
-            <span>+ Form UI</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Guide Groups Manager */}
-      <div className="p-3 border-b border-white/10 bg-indigo-500/[0.02]">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-emerald-400" />
-            <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-xs uppercase tracking-wider text-slate-200">
-              Groups ({groups.length})
+    <aside
+      className="bg-[#0d0d14] border-r border-white/[0.055] flex flex-col h-full shrink-0 select-none z-20 overflow-hidden"
+      style={{ width }}
+    >
+      {/* Upload & Quick Add Header */}
+      <div className="p-3 space-y-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.15)' }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <div className="w-1 h-3.5 rounded-full" style={{ background: 'linear-gradient(180deg,#6366f1,#818cf8)' }} />
+            <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-[10px] uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
+              Groups & Screenshots ({images.length})
             </h2>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => autoGroupImagesByName()}
-              className="px-2 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition-all"
-              title="Auto-Group Screenshots by Filename Sequence"
+              className="px-2 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+              title="Auto-Group Screenshots by Filename Number"
             >
               <Sparkles className="w-3 h-3" />
               <span>Auto</span>
             </button>
             <button
               onClick={() => createGroup()}
-              className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 transition-all"
+              className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
               title="Create New Guide Group"
             >
               <FolderPlus className="w-3 h-3" />
@@ -291,76 +278,159 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
 
-        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-          {sortGroupsNumerically(groups, images).map((group) => {
+        {/* Dropzone */}
+        <div
+          onDragOver={handleDragOverFile}
+          onDragLeave={handleDragLeaveFile}
+          onDrop={handleDropFile}
+          onClick={() => fileInputRef.current?.click()}
+          className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-all ${
+            isDraggingFile
+              ? 'border-indigo-500 bg-indigo-500/10'
+              : 'border-white/15 hover:border-indigo-400/50 hover:bg-white/[0.02]'
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          <div className="flex items-center justify-center gap-2 text-indigo-400">
+            <Upload className="w-4 h-4" />
+            <span className="text-xs font-semibold text-slate-200">Upload Screenshots</span>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-0.5">Drag & drop PNG, JPG, WebP</p>
+        </div>
+
+        {/* Sample screenshot loader buttons */}
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => createSampleScreenshot('dashboard')}
+            className="flex-1 py-1 px-2 rounded-lg text-[10px] font-semibold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 transition-all flex items-center justify-center gap-1 cursor-pointer"
+          >
+            <Sparkles className="w-3 h-3" />
+            <span>+ Dashboard</span>
+          </button>
+          <button
+            onClick={() => createSampleScreenshot('form')}
+            className="flex-1 py-1 px-2 rounded-lg text-[10px] font-semibold text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 transition-all flex items-center justify-center gap-1 cursor-pointer"
+          >
+            <Plus className="w-3 h-3" />
+            <span>+ Form UI</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Group-Wise Images Explorer */}
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
+        {sortedGroups.length === 0 ? (
+          <div className="h-40 flex flex-col items-center justify-center text-center p-4 text-slate-500">
+            <ImageIcon className="w-8 h-8 mb-2 opacity-30" />
+            <p className="text-xs">No groups created yet.</p>
+            <p className="text-[10px] text-slate-600 mt-1">Upload screenshots above to begin.</p>
+          </div>
+        ) : (
+          sortedGroups.map((group, groupIdx) => {
             const isGroupActive = group.id === activeGroupId;
-            const assignedCount = group.imageIds.length;
-            const isTargetDrop = dragOverGroupId === group.id;
-            const isAlreadyInGroup = draggedImageId ? group.imageIds.includes(draggedImageId) : false;
+            const isGroupCollapsed = collapsedGroups[group.id] || false;
+            const isTargetDrop = dragOverGroupId === group.id && !dragOverImageId;
+
+            // Get ordered ImageItems for this group
+            const groupImages = group.imageIds
+              .map((id) => images.find((img) => img.id === id))
+              .filter((img): img is (typeof images)[0] => Boolean(img));
 
             return (
               <div
                 key={group.id}
-                onClick={() => setActiveGroupId(group.id)}
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  const imgId = draggedImageIdRef.current || draggedImageId || e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('imageId');
-                  const alreadyIn = imgId ? group.imageIds.includes(imgId) : false;
-                  if (alreadyIn) {
-                    e.dataTransfer.dropEffect = 'none';
-                  } else {
-                    e.dataTransfer.dropEffect = 'move';
-                  }
                   setDragOverGroupId(group.id);
                 }}
-                onDragLeave={() => {
-                  setDragOverGroupId(null);
+                onDragLeave={(e) => {
+                  e.stopPropagation();
+                  if (dragOverGroupId === group.id && !dragOverImageId) {
+                    setDragOverGroupId(null);
+                  }
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   setDragOverGroupId(null);
-                  const imgId = draggedImageIdRef.current || e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('imageId') || draggedImageId;
+                  setDragOverImageId(null);
 
-                  if (imgId && !group.imageIds.includes(imgId)) {
+                  const imgId = draggedImageId || e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('imageId');
+                  if (!imgId) return;
+
+                  if (draggedSourceGroupId && draggedSourceGroupId !== group.id) {
+                    moveImageBetweenGroups(imgId, draggedSourceGroupId, group.id);
+                  } else if (!group.imageIds.includes(imgId)) {
                     assignImageToGroup(imgId, group.id);
                   }
 
-                  draggedImageIdRef.current = null;
-                  draggedSourceGroupIdRef.current = null;
                   setDraggedImageId(null);
                   setDraggedSourceGroupId(null);
                 }}
-                className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                  isTargetDrop
-                    ? isAlreadyInGroup
-                      ? 'bg-rose-500/20 border-rose-500 scale-[1.02] shadow-xl shadow-rose-500/20'
-                      : 'bg-indigo-500/20 border-indigo-400 scale-[1.02] shadow-xl shadow-indigo-500/20'
-                    : isGroupActive
-                    ? 'bg-indigo-500/10 border-indigo-500/50 shadow-md shadow-indigo-500/10'
-                    : 'bg-[#1e1e1e]/60 border-white/5 hover:border-white/20'
+                className={`rounded-xl border transition-all ${
+                  isGroupActive
+                    ? 'border-indigo-500/60 bg-indigo-500/[0.04] shadow-lg shadow-indigo-500/5'
+                    : 'border-white/10 bg-[#1a1a1a]/60 hover:border-white/20'
                 }`}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <input
-                    type="text"
-                    value={group.name}
-                    onChange={(e) => updateGroup(group.id, { name: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                    className="bg-transparent font-bold text-xs text-white focus:outline-none focus:border-b border-emerald-400 w-36 truncate"
-                  />
-                  <div className="flex items-center gap-1">
+                {/* Group Header */}
+                <div
+                  onClick={() => setActiveGroupId(group.id)}
+                  className={`p-2.5 flex items-center justify-between gap-1.5 cursor-pointer rounded-t-xl transition-all ${
+                    isGroupActive ? 'bg-indigo-500/10' : 'hover:bg-white/[0.02]'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleGroupCollapse(group.id);
+                      }}
+                      className="text-slate-400 hover:text-white p-0.5 rounded transition-colors"
+                      title={isGroupCollapsed ? 'Expand group' : 'Collapse group'}
+                    >
+                      {isGroupCollapsed ? (
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.borderColor || '#6366F1' }} />
+
+                    <input
+                      type="text"
+                      value={group.name}
+                      onChange={(e) => updateGroup(group.id, { name: e.target.value })}
+                      onClick={(e) => e.stopPropagation()}
+                      className="bg-transparent font-bold text-xs text-white focus:outline-none focus:border-b border-indigo-400 truncate flex-1 min-w-[80px]"
+                      title="Click to rename group"
+                    />
+
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-slate-300 shrink-0 font-bold">
+                      {groupImages.length}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-0.5 shrink-0">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleExportGroup(group);
                       }}
-                      disabled={assignedCount === 0}
-                      className="p-1 rounded text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-30"
+                      disabled={groupImages.length === 0}
+                      className="p-1 rounded text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-30 transition-all cursor-pointer"
                       title="Export Group PNG"
                     >
-                      <Download className="w-3 h-3" />
+                      <Download className="w-3.5 h-3.5" />
                     </button>
                     {groups.length > 1 && (
                       <button
@@ -368,233 +438,285 @@ export const Sidebar: React.FC = () => {
                           e.stopPropagation();
                           deleteGroup(group.id);
                         }}
-                        className="p-1 rounded text-rose-400 hover:bg-rose-500/20"
+                        className="p-1 rounded text-rose-400 hover:bg-rose-500/20 transition-all cursor-pointer"
                         title="Delete Group"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-white/5 pt-1.5 mt-1">
-                  <span className="font-mono text-emerald-300">{assignedCount} Screenshots</span>
-                  {isTargetDrop ? (
-                    isAlreadyInGroup ? (
-                      <span className="text-rose-400 font-bold flex items-center gap-1 animate-pulse">
-                        <span className="w-3.5 h-3.5 rounded-full bg-rose-500 text-white flex items-center justify-center text-[9px] font-black">🚫</span>
-                        Already in this group
-                      </span>
+                {/* Group Images List (Visible when expanded) */}
+                {!isGroupCollapsed && (
+                  <div className="p-2 pt-0 space-y-2">
+                    {groupImages.length === 0 ? (
+                      <div
+                        className={`p-3 rounded-lg border border-dashed text-center text-[11px] transition-all ${
+                          isTargetDrop
+                            ? 'border-indigo-400 bg-indigo-500/10 text-indigo-300'
+                            : 'border-white/10 text-slate-500'
+                        }`}
+                      >
+                        <Move className="w-4 h-4 mx-auto mb-1 opacity-40" />
+                        <span>Drop screenshots here to add to this group</span>
+                      </div>
                     ) : (
-                      <span className="text-emerald-300 font-bold flex items-center gap-1 animate-bounce">
-                        <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[9px] font-black">✓</span>
-                        {draggedSourceGroupIdRef.current || draggedSourceGroupId ? 'Move image here' : 'Drop to add here'}
-                      </span>
-                    )
-                  ) : (
-                    <span className="italic text-slate-500">Drag screenshot here</span>
-                  )}
-                </div>
+                      groupImages.map((img, imgIndex) => {
+                        const isCurrentActive = currentImg?.id === img.id;
+                        const isTargetImageDrop = dragOverImageId === img.id;
+                        const displayNumber = imgIndex + 1;
 
-                {assignedCount > 0 && (
-                  <div className="flex gap-1 mt-1.5 overflow-x-auto pb-1">
-                    {group.imageIds.map((id) => {
-                      const img = images.find((i) => i.id === id);
-                      if (!img) return null;
-                      return (
-                        <div
-                          key={id}
-                          className="relative group/mini shrink-0 cursor-grab active:cursor-grabbing"
-                          draggable={true}
-                          onDragStart={(e) => {
-                            e.stopPropagation();
-                            e.dataTransfer.effectAllowed = 'move';
-                            e.dataTransfer.setData('text/plain', id);
-                            e.dataTransfer.setData('imageId', id);
-                            e.dataTransfer.setData('sourceGroupId', group.id);
-                            draggedImageIdRef.current = id;
-                            draggedSourceGroupIdRef.current = group.id;
-                            setDraggedImageId(id);
-                            setDraggedSourceGroupId(group.id);
-                          }}
-                          onDragEnd={() => {
-                            draggedImageIdRef.current = null;
-                            draggedSourceGroupIdRef.current = null;
-                            setDraggedImageId(null);
-                            setDraggedSourceGroupId(null);
-                            setDragOverGroupId(null);
-                          }}
-                        >
-                          <img
-                            src={img.dataUrl}
-                            alt={img.name}
-                            className="w-8 h-8 rounded object-cover border border-white/20"
-                          />
-                          <button
-                            onClick={(e) => {
+                        return (
+                          <div
+                            key={img.id}
+                            draggable={true}
+                            onDragStart={(e) => {
                               e.stopPropagation();
-                              removeImageFromGroup(id, group.id);
+                              e.dataTransfer.effectAllowed = 'move';
+                              e.dataTransfer.setData('text/plain', img.id);
+                              e.dataTransfer.setData('imageId', img.id);
+                              e.dataTransfer.setData('sourceGroupId', group.id);
+                              setDraggedImageId(img.id);
+                              setDraggedSourceGroupId(group.id);
                             }}
-                            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover/mini:opacity-100 transition-all text-[8px]"
-                            title="Remove from group"
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.dataTransfer.dropEffect = 'move';
+                              if (draggedImageId && draggedImageId !== img.id) {
+                                setDragOverImageId(img.id);
+                                setDragOverGroupId(group.id);
+                              }
+                            }}
+                            onDragLeave={(e) => {
+                              e.stopPropagation();
+                              if (dragOverImageId === img.id) {
+                                setDragOverImageId(null);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDragOverImageId(null);
+                              setDragOverGroupId(null);
+
+                              const movingId = draggedImageId || e.dataTransfer.getData('text/plain');
+                              if (!movingId || movingId === img.id) return;
+
+                              if (draggedSourceGroupId === group.id) {
+                                // ponytail: reorder images within same group so image numbers change (e.g. 2 -> 1)
+                                reorderGroupImages(group.id, movingId, img.id);
+                              } else if (draggedSourceGroupId) {
+                                // ponytail: move from source group into target group before target image
+                                moveImageBetweenGroups(movingId, draggedSourceGroupId, group.id, img.id);
+                              }
+
+                              setDraggedImageId(null);
+                              setDraggedSourceGroupId(null);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedImageId(null);
+                              setDraggedSourceGroupId(null);
+                              setDragOverImageId(null);
+                              setDragOverGroupId(null);
+                            }}
+                            onClick={() => {
+                              setActiveGroupId(group.id);
+                              switchImageById(img.id);
+                            }}
+                            title={img.name}
+                            className={`group relative rounded-xl border p-2 cursor-grab active:cursor-grabbing transition-all ${
+                              isTargetImageDrop
+                                ? 'border-indigo-400 bg-indigo-500/20 scale-[1.02] shadow-lg shadow-indigo-500/20'
+                                : isCurrentActive
+                                ? 'border-indigo-500 bg-indigo-500/15 ring-1 ring-indigo-500/50 shadow-md shadow-indigo-500/15'
+                                : 'border-white/10 bg-[#161616] hover:border-white/25 hover:bg-[#1a1a1a]'
+                            }`}
                           >
-                            ×
-                          </button>
-                        </div>
-                      );
-                    })}
+                            {/* Card Body */}
+                            <div className="flex items-center gap-2.5">
+                              {/* Position Badge Number & Drag Grip */}
+                              <div className="flex flex-col items-center justify-center shrink-0 gap-1">
+                                <div
+                                  className={`w-6 h-6 rounded-md font-['Plus_Jakarta_Sans'] font-extrabold text-xs flex items-center justify-center shadow-md transition-all ${
+                                    isCurrentActive
+                                      ? 'bg-indigo-600 text-white ring-2 ring-indigo-400'
+                                      : 'bg-slate-800 text-slate-200 border border-white/15 group-hover:bg-indigo-500/30 group-hover:text-white'
+                                  }`}
+                                  title={`Position #${displayNumber} in ${group.name} - Drag to change order`}
+                                >
+                                  {displayNumber}
+                                </div>
+                                <GripVertical className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-colors" />
+                              </div>
+
+                              {/* Thumbnail preview */}
+                              <div className="w-16 h-12 rounded-lg overflow-hidden bg-black/50 border border-white/10 shrink-0 relative pointer-events-none">
+                                <img
+                                  src={img.dataUrl}
+                                  alt={img.name}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                />
+                              </div>
+
+                              {/* Filename & Info */}
+                              <div className="flex-1 min-w-0 pr-5">
+                                <p
+                                  className="text-xs font-semibold text-slate-200 truncate group-hover:text-indigo-300 transition-colors"
+                                  title={img.name}
+                                >
+                                  {img.name}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 font-mono">
+                                  <span>{img.width} × {img.height}</span>
+                                  {isCurrentActive && (
+                                    <span className="text-emerald-400 font-bold font-sans">Active</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Remove from group button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeImageFromGroup(img.id, group.id);
+                                }}
+                                className="absolute top-2 right-2 w-5 h-5 rounded-md bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                                title="Remove screenshot from this group"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            {/* Prominent Hover Filename Tooltip */}
+                            <div className="absolute left-2 bottom-full mb-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 z-50 bg-[#1e1e2e] border border-indigo-500/40 text-indigo-200 font-mono text-[11px] px-2.5 py-1 rounded-md shadow-2xl backdrop-blur-md whitespace-nowrap max-w-[280px] truncate">
+                              📄 {img.name}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+
+                    {/* Drop-at-the-end zone */}
+                    {groupImages.length > 0 && (
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDragOverImageId('__end__');
+                          setDragOverGroupId(group.id);
+                        }}
+                        onDragLeave={(e) => {
+                          e.stopPropagation();
+                          if (dragOverImageId === '__end__') {
+                            setDragOverImageId(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDragOverImageId(null);
+                          setDragOverGroupId(null);
+
+                          const movingId = draggedImageId || e.dataTransfer.getData('text/plain');
+                          if (!movingId) return;
+
+                          if (draggedSourceGroupId === group.id) {
+                            reorderGroupImages(group.id, movingId, '__end__');
+                          } else if (draggedSourceGroupId) {
+                            moveImageBetweenGroups(movingId, draggedSourceGroupId, group.id, '__end__');
+                          }
+
+                          setDraggedImageId(null);
+                          setDraggedSourceGroupId(null);
+                        }}
+                        className={`h-4 rounded border border-dashed transition-all ${
+                          dragOverGroupId === group.id && dragOverImageId === '__end__'
+                            ? 'border-indigo-400 bg-indigo-500/20'
+                            : 'border-transparent hover:border-white/10'
+                        }`}
+                      />
+                    )}
                   </div>
                 )}
               </div>
             );
-          })}
-        </div>
-      </div>
-
-      {/* Screenshot List Section (Draggable & Reorderable) */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        <div className="flex items-center justify-between text-xs text-slate-300 font-semibold px-1">
-          <span>Loaded Screenshots ({images.length})</span>
-          <span className="text-[10px] text-slate-500">Drag to Group or Reorder</span>
-        </div>
-
-        {images.length === 0 ? (
-          <div className="h-40 flex flex-col items-center justify-center text-center p-4 text-slate-500">
-            <ImageIcon className="w-8 h-8 mb-2 opacity-30" />
-            <p className="text-xs">No screenshots loaded yet.</p>
-            <p className="text-[10px] text-slate-600 mt-1">Upload images or load samples above.</p>
-          </div>
-        ) : (
-          images.map((imgObj, idx) => {
-            const isActive = idx === currentIndex;
-            const isDragOver = dragOverImageIndex === idx;
-
-            return (
-              <div
-                key={imgObj.id}
-                draggable={true}
-                onDragStart={(e) => {
-                  e.dataTransfer.effectAllowed = 'copyMove';
-                  e.dataTransfer.setData('text/plain', imgObj.id);
-                  e.dataTransfer.setData('imageId', imgObj.id);
-                  draggedImageIdRef.current = imgObj.id;
-                  draggedSourceGroupIdRef.current = groups.find((g) => g.imageIds.includes(imgObj.id))?.id || null;
-                  setDraggedImageId(imgObj.id);
-                  setDraggedSourceGroupId(draggedSourceGroupIdRef.current);
-                  setDraggedImageIndex(idx);
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (draggedImageIndex !== null && draggedImageIndex !== idx) {
-                    setDragOverImageIndex(idx);
-                  }
-                }}
-                onDragLeave={() => {
-                  setDragOverImageIndex(null);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOverImageIndex(null);
-                  if (draggedImageIndex !== null && draggedImageIndex !== idx) {
-                    reorderImages(draggedImageIndex, idx);
-                  }
-                }}
-                onDragEnd={() => {
-                  draggedImageIdRef.current = null;
-                  draggedSourceGroupIdRef.current = null;
-                  setDraggedImageId(null);
-                  setDraggedSourceGroupId(null);
-                  setDraggedImageIndex(null);
-                  setDragOverImageIndex(null);
-                }}
-                onClick={() => switchImage(idx)}
-                className={`group relative rounded-xl border p-2 cursor-grab active:cursor-grabbing transition-all ${
-                  isDragOver
-                    ? 'border-indigo-400 bg-indigo-500/20 scale-[1.02]'
-                    : isActive
-                    ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
-                    : 'border-white/10 bg-[#1e1e1e]/50 hover:border-white/20 hover:bg-[#1e1e1e]'
-                }`}
-              >
-                {/* Index badge & Drag Handle */}
-                <div className="absolute top-3 left-3 z-10 flex items-center gap-1">
-                  <div className="w-5 h-5 rounded-full bg-slate-900/90 text-white font-bold text-[10px] flex items-center justify-center border border-white/20 shadow">
-                    {idx + 1}
-                  </div>
-                  <GripVertical className="w-4 h-4 text-slate-400 opacity-60 group-hover:opacity-100" />
-                </div>
-
-                {/* Remove button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeImage(idx);
-                  }}
-                  className="absolute top-3 right-3 z-10 w-5 h-5 rounded-full bg-rose-500/80 text-white opacity-0 group-hover:opacity-100 hover:bg-rose-600 transition-all flex items-center justify-center shadow"
-                  title="Remove image"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-
-                {/* Reorder Up/Down Buttons */}
-                <div className="absolute bottom-3 right-3 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                  {idx > 0 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderImages(idx, idx - 1);
-                      }}
-                      className="w-5 h-5 rounded bg-slate-800/90 hover:bg-slate-700 text-white flex items-center justify-center border border-white/10"
-                      title="Move Up"
-                    >
-                      <ArrowUp className="w-3 h-3" />
-                    </button>
-                  )}
-                  {idx < images.length - 1 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderImages(idx, idx + 1);
-                      }}
-                      className="w-5 h-5 rounded bg-slate-800/90 hover:bg-slate-700 text-white flex items-center justify-center border border-white/10"
-                      title="Move Down"
-                    >
-                      <ArrowDown className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Thumbnail Image Preview */}
-                <div className="w-full h-24 rounded-lg overflow-hidden bg-black/40 mb-1.5 border border-white/5 pointer-events-none">
-                  <img
-                    src={imgObj.dataUrl}
-                    alt={imgObj.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                </div>
-
-                {/* Image info & Quick assign button */}
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-200 font-medium truncate max-w-[130px]">{imgObj.name}</span>
-                  {activeGroupId && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        assignImageToGroup(imgObj.id, activeGroupId);
-                      }}
-                      className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
-                      title="Add to Active Group"
-                    >
-                      + Group
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
           })
         )}
+
+        {/* Ungrouped Screenshots Section (if any exist) */}
+        {ungroupedImages.length > 0 && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.03] p-2.5 space-y-2">
+            <div className="flex items-center justify-between text-xs text-amber-300 font-bold px-1">
+              <span>Ungrouped Screenshots ({ungroupedImages.length})</span>
+              <span className="text-[10px] text-slate-500">Drag to any group</span>
+            </div>
+            {ungroupedImages.map((img) => (
+              <div
+                key={img.id}
+                draggable={true}
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  e.dataTransfer.setData('text/plain', img.id);
+                  e.dataTransfer.setData('imageId', img.id);
+                  setDraggedImageId(img.id);
+                  setDraggedSourceGroupId(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedImageId(null);
+                  setDraggedSourceGroupId(null);
+                }}
+                onClick={() => switchImageById(img.id)}
+                title={img.name}
+                className="group relative flex items-center justify-between p-2 rounded-lg bg-[#181818] border border-white/10 hover:border-amber-400/50 cursor-grab active:cursor-grabbing transition-all"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-12 h-9 rounded overflow-hidden bg-black border border-white/10 shrink-0">
+                    <img src={img.dataUrl} alt={img.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="truncate">
+                    <p className="text-xs font-semibold text-slate-200 truncate">{img.name}</p>
+                    <p className="text-[10px] text-slate-500">{img.width} × {img.height}</p>
+                  </div>
+                </div>
+
+                {activeGroupId && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      assignImageToGroup(img.id, activeGroupId);
+                    }}
+                    className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 shrink-0 cursor-pointer"
+                    title="Add to selected group"
+                  >
+                    + Add
+                  </button>
+                )}
+
+                {/* Hover Filename Tooltip */}
+                <div className="absolute left-2 bottom-full mb-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 z-50 bg-[#1e1e2e] border border-amber-500/40 text-amber-200 font-mono text-[11px] px-2.5 py-1 rounded-md shadow-2xl backdrop-blur-md whitespace-nowrap max-w-[280px] truncate">
+                  📄 {img.name}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Export All Zip Button at Bottom */}
+      {images.length > 0 && (
+        <div className="p-3 border-t border-white/10 bg-[#181818]/60">
+          <button
+            onClick={handleExportZip}
+            disabled={isZipping}
+            className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50"
+          >
+            <Archive className="w-4 h-4" />
+            <span>{isZipping ? 'Generating ZIP...' : 'Export All Groups (ZIP)'}</span>
+          </button>
+        </div>
+      )}
     </aside>
   );
 };

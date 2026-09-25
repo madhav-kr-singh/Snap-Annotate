@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, sortGroupsNumerically } from '../store/useAppStore';
 import { drawAnnotationsOnCanvas } from '../utils/canvas';
 import { AnnotationItem, DragMode, Point } from '../types';
 import { 
@@ -40,6 +40,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     setSelectedAnnotationId,
     setActiveTool,
     switchImage,
+    switchImageById,
+    groups,
+    activeGroupId,
+    setActiveGroupId,
     undo,
     redo,
     pendingArrowTargetId,
@@ -166,6 +170,75 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const selectedItemBase = currentAnnotations.find((item) => item.id === selectedAnnotationId) || null;
   const editingItem = currentAnnotations.find((item) => item.id === editingId) || null;
 
+  // ponytail: group-wise ordered image navigation across groups
+  const sortedGroups = sortGroupsNumerically(groups, images);
+  const groupsWithImages = sortedGroups
+    .map((g) => {
+      const validImages = g.imageIds
+        .map((id) => images.find((img) => img.id === id))
+        .filter((img): img is typeof images[0] => Boolean(img));
+      return { group: g, images: validImages };
+    })
+    .filter((entry) => entry.images.length > 0);
+
+  const currentGroupEntryIndex = groupsWithImages.findIndex(
+    (entry) =>
+      (activeGroupId ? entry.group.id === activeGroupId && entry.images.some((img) => img.id === currentImg?.id) : false) ||
+      entry.images.some((img) => img.id === currentImg?.id)
+  );
+
+  const currentEntry = currentGroupEntryIndex !== -1 ? groupsWithImages[currentGroupEntryIndex] : null;
+  const currentGroup = currentEntry ? currentEntry.group : (activeGroupId && groups.find((g) => g.id === activeGroupId)) || groups[0];
+  const groupImageItems = currentEntry ? currentEntry.images : images;
+
+  const currentGroupPos = currentImg ? groupImageItems.findIndex((img) => img.id === currentImg.id) : -1;
+
+  const hasPrevInGroup = currentGroupPos > 0;
+  const hasPrevGroup = currentGroupEntryIndex > 0;
+  const hasPrev = hasPrevInGroup || hasPrevGroup;
+
+  const hasNextInGroup = currentGroupPos !== -1 && currentGroupPos < groupImageItems.length - 1;
+  const hasNextGroup = currentGroupEntryIndex !== -1 && currentGroupEntryIndex < groupsWithImages.length - 1;
+  const hasNext = hasNextInGroup || hasNextGroup;
+
+  const goToPrevImage = useCallback(() => {
+    if (hasPrevInGroup) {
+      switchImageById(groupImageItems[currentGroupPos - 1].id);
+    } else if (hasPrevGroup) {
+      // Seamlessly navigate to the last image of the previous group
+      const prevEntry = groupsWithImages[currentGroupEntryIndex - 1];
+      setActiveGroupId(prevEntry.group.id);
+      switchImageById(prevEntry.images[prevEntry.images.length - 1].id);
+    } else if (currentIndex > 0) {
+      switchImage(currentIndex - 1);
+    }
+  }, [hasPrevInGroup, hasPrevGroup, groupImageItems, currentGroupPos, groupsWithImages, currentGroupEntryIndex, switchImageById, setActiveGroupId, currentIndex, switchImage]);
+
+  const goToNextImage = useCallback(() => {
+    if (hasNextInGroup) {
+      switchImageById(groupImageItems[currentGroupPos + 1].id);
+    } else if (hasNextGroup) {
+      // Seamlessly navigate to the first image of the next group
+      const nextEntry = groupsWithImages[currentGroupEntryIndex + 1];
+      setActiveGroupId(nextEntry.group.id);
+      switchImageById(nextEntry.images[0].id);
+    } else if (currentIndex < images.length - 1) {
+      switchImage(currentIndex + 1);
+    }
+  }, [hasNextInGroup, hasNextGroup, groupImageItems, currentGroupPos, groupsWithImages, currentGroupEntryIndex, switchImageById, setActiveGroupId, currentIndex, switchImage]);
+
+  const nextTooltip = hasNextInGroup
+    ? `Next Screenshot (${currentGroupPos + 2} of ${groupImageItems.length}) - Right Arrow`
+    : hasNextGroup
+    ? `Next Group: ${groupsWithImages[currentGroupEntryIndex + 1].group.name} (1 of ${groupsWithImages[currentGroupEntryIndex + 1].images.length}) - Right Arrow`
+    : 'Next Screenshot (Right Arrow)';
+
+  const prevTooltip = hasPrevInGroup
+    ? `Previous Screenshot (${currentGroupPos} of ${groupImageItems.length}) - Left Arrow`
+    : hasPrevGroup
+    ? `Previous Group: ${groupsWithImages[currentGroupEntryIndex - 1].group.name} (${groupsWithImages[currentGroupEntryIndex - 1].images.length} of ${groupsWithImages[currentGroupEntryIndex - 1].images.length}) - Left Arrow`
+    : 'Previous Screenshot (Left Arrow)';
+
   // Sync selectedItemState with store when not dragging
   useEffect(() => {
     if (dragMode === 'none') {
@@ -260,21 +333,17 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           deleteAnnotation(selectedAnnotationId);
         }
       } else if (e.key === 'ArrowLeft') {
-        if (currentIndex > 0) {
-          e.preventDefault();
-          switchImage(currentIndex - 1);
-        }
+        e.preventDefault();
+        goToPrevImage();
       } else if (e.key === 'ArrowRight') {
-        if (currentIndex < images.length - 1) {
-          e.preventDefault();
-          switchImage(currentIndex + 1);
-        }
+        e.preventDefault();
+        goToNextImage();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, deleteAnnotation, selectedAnnotationId, editingId, currentIndex, images.length, switchImage, onToggleLeftSidebar]);
+  }, [undo, redo, deleteAnnotation, selectedAnnotationId, editingId, goToPrevImage, goToNextImage, onToggleLeftSidebar]);
 
   // Convert client viewport coordinates to Canvas coordinates
   const getCanvasCoords = (e: React.MouseEvent | MouseEvent): Point => {
@@ -988,28 +1057,28 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         </div>
       )}
 
-      {/* Floating Side Navigation Overlay Arrows (Forward & Backward) */}
-      {currentImg && currentIndex > 0 && (
+      {/* Floating Side Navigation Overlay Arrows (Forward & Backward in Group & Across Groups) */}
+      {currentImg && hasPrev && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            switchImage(currentIndex - 1);
+            goToPrevImage();
           }}
           className="absolute left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-[#181818]/85 hover:bg-indigo-600 text-white border border-white/20 shadow-2xl flex items-center justify-center transition-all scale-100 hover:scale-110 active:scale-95 z-40 group cursor-pointer"
-          title="Previous Screenshot (Left Arrow)"
+          title={prevTooltip}
         >
           <ChevronLeft className="w-7 h-7 group-hover:-translate-x-0.5 transition-transform text-slate-200 group-hover:text-white" />
         </button>
       )}
 
-      {currentImg && currentIndex < images.length - 1 && (
+      {currentImg && hasNext && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            switchImage(currentIndex + 1);
+            goToNextImage();
           }}
           className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-[#181818]/85 hover:bg-indigo-600 text-white border border-white/20 shadow-2xl flex items-center justify-center transition-all scale-100 hover:scale-110 active:scale-95 z-40 group cursor-pointer"
-          title="Next Screenshot (Right Arrow)"
+          title={nextTooltip}
         >
           <ChevronRight className="w-7 h-7 group-hover:translate-x-0.5 transition-transform text-slate-200 group-hover:text-white" />
         </button>
@@ -1033,24 +1102,29 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       {/* Floating Canvas & Navigation Controls */}
       {currentImg && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-[#181818]/90 border border-white/10 rounded-xl px-3 py-1.5 backdrop-blur-md flex items-center gap-2 shadow-2xl z-30">
-          {/* Image Navigation Switcher */}
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg px-1 py-0.5 border border-white/10">
+          {/* Group-wise Image Navigation Switcher */}
+          <div className="flex items-center gap-1.5 bg-white/5 rounded-lg px-2 py-1 border border-white/10">
             <button
-              onClick={() => currentIndex > 0 && switchImage(currentIndex - 1)}
-              disabled={currentIndex <= 0}
-              className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:pointer-events-none transition-all"
-              title="Previous Image (Left Arrow)"
+              onClick={goToPrevImage}
+              disabled={!hasPrev}
+              className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:pointer-events-none transition-all cursor-pointer"
+              title={prevTooltip}
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="text-[11px] font-mono font-bold text-indigo-300 px-1 min-w-[50px] text-center">
-              {currentIndex + 1} / {images.length}
-            </span>
+            <div className="flex items-center gap-1.5 px-1 font-mono text-center">
+              <span className="text-[11px] font-bold text-slate-300 max-w-[120px] truncate font-sans">
+                {currentGroup?.name || 'Group'}
+              </span>
+              <span className="text-[11px] font-bold text-indigo-300 bg-indigo-500/20 px-1.5 py-0.5 rounded border border-indigo-500/30">
+                {currentGroupPos !== -1 ? currentGroupPos + 1 : currentIndex + 1} / {groupImageItems.length > 0 ? groupImageItems.length : images.length}
+              </span>
+            </div>
             <button
-              onClick={() => currentIndex < images.length - 1 && switchImage(currentIndex + 1)}
-              disabled={currentIndex >= images.length - 1}
-              className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:pointer-events-none transition-all"
-              title="Next Image (Right Arrow)"
+              onClick={goToNextImage}
+              disabled={!hasNext}
+              className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:pointer-events-none transition-all cursor-pointer"
+              title={nextTooltip}
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>

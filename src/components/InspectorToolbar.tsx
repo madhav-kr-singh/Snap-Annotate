@@ -48,17 +48,23 @@ export const InspectorToolbar: React.FC = () => {
   const activeGroup = groups.find((g) => g.id === activeGroupId) || groups[0];
 
   return (
-    <aside className="w-80 bg-[#121212] border-l border-white/10 flex flex-col h-full shrink-0 select-none overflow-y-auto">
+    <aside
+      className="w-80 flex flex-col h-full shrink-0 select-none overflow-y-auto"
+      style={{
+        background: 'linear-gradient(180deg, #0e0e16 0%, #0b0b12 100%)',
+        borderLeft: '1px solid rgba(255,255,255,0.055)',
+      }}
+    >
       {/* Studio Tools Grid */}
-      <div className="p-4 border-b border-white/10 space-y-3">
-        <div className="flex items-center gap-2">
-          <Grid className="w-4 h-4 text-indigo-400" />
-          <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-xs uppercase tracking-wider text-slate-200">
+      <div className="p-3.5 space-y-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="flex items-center gap-1.5">
+          <div className="w-1 h-3.5 rounded-full" style={{ background: 'linear-gradient(180deg,#6366f1,#818cf8)' }} />
+          <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-[10px] uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
             Studio Tools
           </h2>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           {[
             { id: 'select', label: 'Select', icon: MousePointer },
             { id: 'stepNumber', label: 'Step Badge', icon: CircleDot },
@@ -72,13 +78,23 @@ export const InspectorToolbar: React.FC = () => {
               <button
                 key={tool.id}
                 onClick={() => setActiveTool(tool.id as ToolType)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                  isActive
-                    ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/30'
-                    : 'bg-[#1e1e1e]/60 border-white/5 text-slate-300 hover:bg-[#1e1e1e] hover:border-white/15'
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all cursor-pointer ${
+                  isActive ? 'tool-active-ring' : ''
                 }`}
+                style={isActive ? {
+                  background: 'linear-gradient(135deg, rgba(79,70,229,0.8) 0%, rgba(99,102,241,0.85) 100%)',
+                  border: '1px solid rgba(129,140,248,0.5)',
+                  color: '#fff',
+                  boxShadow: '0 2px 12px rgba(99,102,241,0.3), inset 0 1px 0 rgba(255,255,255,0.12)',
+                } : {
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  color: 'var(--text-secondary)',
+                }}
+                onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.075)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.color = '#eeeef5'; }}}
+                onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}}
               >
-                <IconComponent className="w-4 h-4" />
+                <IconComponent className="w-3.5 h-3.5" />
                 <span>{tool.label}</span>
               </button>
             );
@@ -89,17 +105,17 @@ export const InspectorToolbar: React.FC = () => {
      
 
       {/* Selected Item Properties Panel */}
-      <div className="p-4 border-b border-white/10 space-y-4">
-        <div className="flex items-center gap-2">
-          <Sliders className="w-4 h-4 text-indigo-400" />
-          <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-xs uppercase tracking-wider text-slate-200">
+      <div className="p-3.5 space-y-3.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="flex items-center gap-1.5">
+          <div className="w-1 h-3.5 rounded-full" style={{ background: 'linear-gradient(180deg,#818cf8,#a5b4fc)' }} />
+          <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-[10px] uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
             {selectedItem ? `${selectedItem.type} Properties` : 'Item Properties'}
           </h2>
         </div>
 
         {!selectedItem ? (
-          <div className="p-4 rounded-xl bg-[#1e1e1e]/40 border border-white/5 text-center text-slate-400 text-xs">
-            Select any badge, box, or callout on the canvas to inspect and customize its shape, style, size, or colors.
+          <div className="p-4 rounded-xl text-center text-xs" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>
+            Select any annotation on canvas to inspect and customize it.
           </div>
         ) : (
           <div className="space-y-3">
@@ -544,12 +560,12 @@ export const InspectorToolbar: React.FC = () => {
 
       {/* Active Guide Group Settings */}
       {activeGroup && (
-        <div className="p-4 space-y-3">
+        <div className="p-3.5 space-y-3">
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1.5 overflow-hidden">
-              <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-[11px] uppercase tracking-wider text-slate-200 truncate whitespace-nowrap">
-                Group Config ({activeGroup.name})
+              <div className="w-1 h-3.5 rounded-full shrink-0" style={{ background: 'linear-gradient(180deg,#10b981,#34d399)' }} />
+              <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-[10px] uppercase tracking-widest truncate whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                Guide Group — {activeGroup.name}
               </h2>
             </div>
             <CustomSelect
@@ -559,7 +575,7 @@ export const InspectorToolbar: React.FC = () => {
             />
           </div>
 
-          <div className="p-3 rounded-xl bg-[#1e1e1e]/60 border border-white/5 space-y-3">
+          <div className="p-3 rounded-xl space-y-3" style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="space-y-1">
               <label className="text-[11px] font-medium text-slate-400">Stack Alignment</label>
               <div className="grid grid-cols-2 gap-2">
@@ -632,15 +648,15 @@ export const InspectorToolbar: React.FC = () => {
       )}
 
        {/* Group Stepper Manager Panel */}
-      <div className="p-4 border-b border-white/10 space-y-3 bg-indigo-500/[0.02]">
+      <div className="p-3.5 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(99,102,241,0.025)' }}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Hash className="w-4 h-4 text-indigo-400" />
-            <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-xs uppercase tracking-wider text-slate-200">
-              Group Stepper Manager
+          <div className="flex items-center gap-1.5">
+            <div className="w-1 h-3.5 rounded-full" style={{ background: 'linear-gradient(180deg,#6366f1,#a5b4fc)' }} />
+            <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-[10px] uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
+              Step Counter
             </h2>
           </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(99,102,241,0.15)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.25)' }}>
             {currentStepBadgesCount} Badges
           </span>
         </div>

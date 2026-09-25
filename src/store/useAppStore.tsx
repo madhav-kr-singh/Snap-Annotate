@@ -18,6 +18,7 @@ interface AppState {
   // Actions
   addImage: (name: string, dataUrl: string, width: number, height: number, imgElement: HTMLImageElement) => void;
   switchImage: (index: number) => void;
+  switchImageById: (id: string) => void;
   removeImage: (index: number) => void;
   reorderImages: (draggedIndex: number, targetIndex: number) => void;
   addAnnotation: (item: AnnotationItem) => void;
@@ -37,7 +38,7 @@ interface AppState {
   deleteGroup: (groupId: string) => void;
   setActiveGroupId: (groupId: string | null) => void;
   assignImageToGroup: (imageId: string, groupId: string) => void;
-  moveImageBetweenGroups: (imageId: string, sourceGroupId: string, targetGroupId: string) => void;
+  moveImageBetweenGroups: (imageId: string, sourceGroupId: string, targetGroupId: string, targetImageId?: string) => void;
   removeImageFromGroup: (imageId: string, groupId: string) => void;
   reorderGroupImages: (groupId: string, draggedId: string, targetId: string) => void;
   updateGroup: (groupId: string, updates: Partial<AnnotationGroup>) => void;
@@ -49,9 +50,10 @@ interface AppState {
 
 const AppContext = createContext<AppState | null>(null);
 
+// ponytail: default to clean "Group 1" so uploaded screenshots land together in group 1
 const DEFAULT_GROUP: AnnotationGroup = {
-  id: 'group_default',
-  name: 'Primary Guide Group',
+  id: 'group_1',
+  name: 'Group 1',
   imageIds: [],
   layout: 'vertical',
   borderColor: '#34C759',
@@ -107,7 +109,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [stepCounter, setStepCounter] = useState<number>(1);
   
   const [groups, setGroups] = useState<AnnotationGroup[]>([DEFAULT_GROUP]);
-  const [activeGroupId, setActiveGroupId] = useState<string | null>('group_default');
+  const [activeGroupId, setActiveGroupId] = useState<string | null>('group_1');
   const [pendingArrowTargetId, setPendingArrowTargetId] = useState<string | null>(null);
 
   // Save current annotations state to undo history
@@ -148,16 +150,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCurrentIndex(0);
         }
 
-        // Smart Auto-Group incoming image by filename sequence (1 x, 1.1 x, 1.3 x -> Group 1; 2 x, 2.1 x -> Group 2)
-        const numMatch = name.trim().match(/^\s*(\d+)/);
+        // ponytail: group incoming images into active group, or by filename prefix if specified
+        const numMatch = name.trim().match(/^(?:group|grp|g)?[_\s-]*(\d+)/i);
 
         setGroups((prevGroups) => {
-          const isInitialDefaultEmpty =
-            prevGroups.length === 1 &&
-            prevGroups[0].id === 'group_default' &&
-            prevGroups[0].imageIds.length === 0;
-
-          const baseGroups = isInitialDefaultEmpty ? [] : [...prevGroups];
+          let baseGroups = [...prevGroups];
+          if (baseGroups.length === 0) {
+            baseGroups = [DEFAULT_GROUP];
+          }
 
           let updatedGroups: AnnotationGroup[];
 
@@ -190,21 +190,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               updatedGroups = [...baseGroups, newG];
             }
           } else {
-            const baseName = name.trim().replace(/\.[^/.]+$/, '') || 'Untitled';
-            const textGroupId = `group_text_${newImg.id}`;
-            const textGroupName = `Guide: ${baseName}`;
-
-            const newG: AnnotationGroup = {
-              id: textGroupId,
-              name: textGroupName,
-              imageIds: [newImg.id],
-              layout: 'vertical',
-              borderColor: '#6366F1',
-              borderWidth: 6,
-              spacing: 12,
-            };
-
-            updatedGroups = [...baseGroups, newG];
+            // ponytail: add into active group so all uploaded images stay together
+            const targetId = activeGroupId || baseGroups[0].id;
+            const targetIdx = baseGroups.findIndex((g) => g.id === targetId);
+            if (targetIdx !== -1) {
+              const updated = [...baseGroups];
+              updated[targetIdx] = {
+                ...updated[targetIdx],
+                imageIds: [...updated[targetIdx].imageIds.filter((id) => id !== newImg.id), newImg.id],
+              };
+              updatedGroups = updated;
+            } else {
+              const updated = [...baseGroups];
+              updated[0] = {
+                ...updated[0],
+                imageIds: [...updated[0].imageIds.filter((id) => id !== newImg.id), newImg.id],
+              };
+              updatedGroups = updated;
+            }
           }
 
           return sortGroupsNumerically(updatedGroups, nextImages);
@@ -213,13 +216,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return nextImages;
       });
     },
-    [currentIndex]
+    [currentIndex, activeGroupId]
   );
 
   const switchImage = useCallback((index: number) => {
     setImages((currentImages) => {
       if (index >= 0 && index < currentImages.length) {
         setCurrentIndex(index);
+        setSelectedAnnotationId(null);
+      }
+      return currentImages;
+    });
+  }, []);
+
+  // ponytail: direct O(1) lookup image switch by unique ID
+  const switchImageById = useCallback((id: string) => {
+    setImages((currentImages) => {
+      const idx = currentImages.findIndex((img) => img.id === id);
+      if (idx !== -1) {
+        setCurrentIndex(idx);
         setSelectedAnnotationId(null);
       }
       return currentImages;
@@ -257,6 +272,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       result.splice(targetIndex, 0, removed);
       return result;
     });
+
+    // ponytail: reorder annotationsPerImage so annotations remain attached to the right image
+    setAnnotationsPerImage((prev) => {
+      const copy: Record<number, AnnotationItem[]> = {};
+      const keys = Object.keys(prev).map(Number);
+      const maxIdx = Math.max(...keys, draggedIndex, targetIndex);
+      const arr: AnnotationItem[][] = [];
+      for (let i = 0; i <= maxIdx; i++) arr[i] = prev[i] || [];
+      const [removedAnn] = arr.splice(draggedIndex, 1);
+      arr.splice(targetIndex, 0, removedAnn);
+      arr.forEach((annList, idx) => {
+        copy[idx] = annList;
+      });
+      return copy;
+    });
+
     setCurrentIndex(targetIndex);
   }, []);
 
@@ -395,10 +426,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const moveImageBetweenGroups = useCallback(
-    (imageId: string, _sourceGroupId: string, targetGroupId: string) => {
-      assignImageToGroup(imageId, targetGroupId);
+    (imageId: string, sourceGroupId: string, targetGroupId: string, targetImageId?: string) => {
+      setGroups((prev) =>
+        prev.map((g) => {
+          if (g.id === sourceGroupId && sourceGroupId !== targetGroupId) {
+            return { ...g, imageIds: g.imageIds.filter((id) => id !== imageId) };
+          }
+          if (g.id === targetGroupId) {
+            const list = g.imageIds.filter((id) => id !== imageId);
+            if (targetImageId && targetImageId !== '__end__') {
+              const targetIdx = list.indexOf(targetImageId);
+              if (targetIdx !== -1) {
+                list.splice(targetIdx, 0, imageId);
+                return { ...g, imageIds: list };
+              }
+            }
+            list.push(imageId);
+            return { ...g, imageIds: list };
+          }
+          return g;
+        })
+      );
     },
-    [assignImageToGroup]
+    []
   );
 
   const removeImageFromGroup = useCallback((imageId: string, groupId: string) => {
@@ -418,10 +468,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (g.id === groupId) {
           const list = [...g.imageIds];
           const draggedIdx = list.indexOf(draggedId);
-          const targetIdx = list.indexOf(targetId);
-          if (draggedIdx !== -1 && targetIdx !== -1) {
-            list.splice(draggedIdx, 1);
-            list.splice(targetIdx, 0, draggedId);
+          if (draggedIdx === -1) return g;
+          // ponytail: remove dragged item first to avoid index shifting when dropping
+          list.splice(draggedIdx, 1);
+          if (targetId === '__end__') {
+            list.push(draggedId);
+          } else {
+            const targetIdx = list.indexOf(targetId);
+            if (targetIdx !== -1) {
+              list.splice(targetIdx, 0, draggedId);
+            } else {
+              list.push(draggedId);
+            }
           }
           return { ...g, imageIds: list };
         }
@@ -593,6 +651,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPendingArrowTargetId,
         addImage,
         switchImage,
+        switchImageById,
         removeImage,
         reorderImages,
         addAnnotation,

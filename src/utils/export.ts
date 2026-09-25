@@ -50,7 +50,9 @@ export async function exportAllGroupsAsZip(
   let count = 0;
 
   groups.forEach((group, groupIdx) => {
-    const groupImages = images.filter((img) => group.imageIds.includes(img.id));
+    const groupImages = group.imageIds
+      .map((id) => images.find((img) => img.id === id))
+      .filter((img): img is ImageItem => Boolean(img));
     if (groupImages.length === 0) return;
 
     const groupAnnotations: Record<number, AnnotationItem[]> = {};
